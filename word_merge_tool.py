@@ -91,8 +91,12 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             # 让每份自动另起一页。相比在每份末尾插入分页符，这种方式
             # 不会在下一页顶部多出一个空白段落（之前多出的空白行就是
             # 插入分页符后残留的那个空段落造成的）。
+            # 注意：不要用 .Paragraphs(1) 取段落，win32com 下它返回的
+            # 对象没有 ParagraphFormat 属性（会报 <unknown>ParagraphFormat）。
+            # 直接用 collapsed 的 Range 即可，ParagraphFormat 会作用于
+            # 该插入点所在的整个段落。
             if i > 1:
-                first_para = dst_doc.Range(insert_pos, insert_pos).Paragraphs(1)
+                first_para = dst_doc.Range(insert_pos, insert_pos)
                 first_para.ParagraphFormat.PageBreakBefore = True
 
             # 只在刚粘贴的这一段内查找替换，避免误替换前面已生成的内容
