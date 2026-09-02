@@ -54,8 +54,9 @@ def merge_documents(template_path, output_path, replace_list, target_word,
     if not os.path.exists(template_path):
         raise FileNotFoundError("模板文件不存在：" + template_path)
 
-    # COM 在线程中使用必须先初始化
-    pythoncom.CoInitialize()
+    # COM 在线程中使用必须先初始化；由于要用到剪贴板（Copy/Paste），
+    # 线程必须以 STA（单线程单元）模式初始化，否则剪贴板操作会失败。
+    pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
 
     word = None
     src_doc = None
@@ -67,6 +68,9 @@ def merge_documents(template_path, output_path, replace_list, target_word,
         if log:
             log("正在打开模板：" + os.path.basename(template_path))
 
+        src_doc = word.Documents.Open(template_path)
+        src_range = src_doc.Content
+
         dst_doc = word.Documents.Add()
 
         total = len(replace_list)
@@ -76,10 +80,12 @@ def merge_documents(template_path, output_path, replace_list, target_word,
 
             insert_pos = dst_doc.Content.End
             rng_dest = dst_doc.Range(insert_pos, insert_pos)
-            # 用 InsertFile 整份插入模板（含图片/浮动图形定位）。
-            # 比 FormattedText 跨文档赋值更能保留图片位置，
-            # 效果等同手动“插入文件 / 复制粘贴”。
-            rng_dest.InsertFile(template_path)
+            # 用剪贴板“复制整份模板 + 粘贴”到目标位置。
+            # 这是与用户手动操作（整体复制、换页粘贴）完全一致的方式，
+            # 能最完整地保留图片、浮动图形的定位，避免 FormattedText /
+            # InsertFile 复制时图片跳位的问题。
+            src_range.Copy()
+            rng_dest.Paste()
 
             # 只在刚粘贴的这一段内查找替换，避免误替换前面已生成的内容
             rng_find = dst_doc.Range(insert_pos, dst_doc.Content.End)
@@ -109,6 +115,19 @@ def merge_documents(template_path, output_path, replace_list, target_word,
         if log:
             log("正在保存结果文件 ...")
         dst_doc.SaveAs2(output_path, FileFormat=WD_FORMAT_DOCX)
+
+        # 清除合并过程中写入剪贴板的模板内容
+        try:
+            word.CutCopyMode = False
+        except Exception:
+            pass
+        try:
+            import win32clipboard
+            win32clipboard.OpenClipboard()
+            win32clipboard.EmptyClipboard()
+            win32clipboard.CloseClipboard()
+        except Exception:
+            pass
 
         if log:
             log("完成！已生成：" + output_path)
@@ -338,5 +357,5 @@ def main():
     root.mainloop()
 
 
-if __name__ == "__main__":
+if __name__ == "__&#8203;main__":
     main()
