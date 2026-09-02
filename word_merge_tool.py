@@ -127,7 +127,7 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             # 且不会像插入分页符那样在下一页顶部残留空白行。
             # 注意：不要用 .Paragraphs(1)（win32com 下返回对象无
             # ParagraphFormat 属性）；直接用 collapsed Range，作用于所在整段。
-            if i > 1:
+            if i > 2:
                 temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
 
             temp_docs.append(temp_doc)
