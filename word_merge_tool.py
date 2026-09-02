@@ -149,9 +149,16 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             temp_docs[i].Activate()
             word.Selection.WholeStory()
             word.Selection.Copy()
-
-            # 粘贴：目标文档光标移到末尾，粘贴整份内容
+            
+            # 目标文档激活
             dst_doc.Activate()
+        
+            # 【修复核心】在粘贴前，先清除当前末尾段落的“段前分页”和“与下段同页”
+            # 这样就算粘贴时发生段落合并，这个属性也不会污染到第一份的内容
+            last_para = dst_doc.Paragraphs(dst_doc.Paragraphs.Count)
+            last_para.PageBreakBefore = False
+            last_para.KeepWithNext = False
+            
             rng = dst_doc.Content
             rng.Collapse(WD_COLLAPSE_END)
             rng.Select()
