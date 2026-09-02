@@ -85,9 +85,22 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             rng_find = dst_doc.Range(insert_pos, dst_doc.Content.End)
             find = rng_find.Find
             find.ClearFormatting()
-            find.Text = target_word
-            find.Replacement.Text = new_word
-            find.Execute(Replace=WD_REPLACE_ALL)
+            # 关键：FindText / ReplaceWith 必须作为参数显式传入 Execute，
+            # 否则仅设置 find.Text / find.Replacement.Text 会被 Execute 的
+            # 默认空参数覆盖，导致“查找空字符串、替换为空”，即替换不生效。
+            find.Execute(
+                FindText=target_word,
+                MatchCase=False,
+                MatchWholeWord=False,
+                MatchWildcards=False,
+                MatchSoundsLike=False,
+                MatchAllWordForms=False,
+                Forward=True,
+                Wrap=1,  # wdFindContinue，在范围内循环查找
+                Format=False,
+                ReplaceWith=new_word,
+                Replace=WD_REPLACE_ALL,
+            )
 
             # 除最后一份外，每份末尾插入分页符
             if i < total:
