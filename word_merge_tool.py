@@ -140,11 +140,22 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             if log:
                 log("[%d/%d] 合并第 %d 份" % (i + 1, total, i + 1))
 
-            # 光标移到最终文档末尾，粘贴下一份的整份内容
+            # 复制：激活源文档并“全选复制”。
+            # 关键：不能用 Content.Copy()（Range.Copy 只复制文本流，
+            # 会丢失锚定在段落上的“浮动图片”），而 Selection.WholeStory()
+            # 模拟手动 Ctrl+A 全选，能连同浮动图片一起复制——这正是
+            # 表格里“联系人类型”列那些方框/选项图片（浮动图片）能
+            # 正常复制过去的原因。
+            temp_docs[i].Activate()
+            word.Selection.WholeStory()
+            word.Selection.Copy()
+
+            # 粘贴：目标文档光标移到末尾，粘贴整份内容
+            dst_doc.Activate()
             rng = dst_doc.Content
             rng.Collapse(WD_COLLAPSE_END)
-            temp_docs[i].Content.Copy()
-            rng.Paste()
+            rng.Select()
+            word.Selection.Paste()
 
         if log:
             log("正在保存结果文件 ...")
