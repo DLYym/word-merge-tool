@@ -6,8 +6,15 @@ Word 批量替换合并工具（Windows）
     1. 选择一个 Word 模板文档（.docx）
     2. 指定“待替换的词”（例如：朋友）
     3. 输入“替换后的词”列表（每行一个，例如：家人 / 老师 / 同事 / 同学）
-    4. 点击“开始合并”，程序会为每个替换词复制一份模板内容，并把“待替换的词”
-       替换成对应的词，最后把所有结果按顺序合并成一个 Word 文档（每份之间用分页符分隔）。
+    4. 点击“开始合并”，程序会为每个替换词“另存一份模板副本”，对每份副本做
+       全文替换，最后把所有结果按顺序合并成一个 Word 文档（每份之间换页）。
+
+实现思路（完全模拟手动操作）：
+    - 用 Documents.Add(Template=模板) 为每个替换词新建一份副本，完整继承
+      模板的页面设置、图片/浮动对象位置、页眉页脚（避免复制粘贴导致对象错位）。
+    - 对每份副本做“全文替换”（整份正文查找替换），避免漏替换。
+    - 从第 2 份起，给其第一段设置“段前分页”，合并后每份自动另起一页，
+      且不会像插入分页符那样在下一页顶部残留空白行。
 
 依赖（Windows）：
     pip install pywin32
@@ -47,12 +54,18 @@ WD_REPLACE_ALL = 2     # wdReplaceAll
 # ---------------------------------------------------------------------------
 def merge_documents(template_path, output_path, replace_list, target_word,
                     show_word=False, log=None):
-    """把模板复制 N 份，每份替换关键词，再合并成一个文档。"""
+    """完全模拟手动操作：为每个替换词另存一份模板副本并全文替换，再合并。"""
     if not HAS_WIN32COM:
         raise RuntimeError("当前环境缺少 pywin32，请先在 Windows 上执行：pip install pywin32")
 
     if not os.path.exists(template_path):
         raise FileNotFoundError("模板文件不存在：" + template_path)
+
+    if not replace_list:
+        raise ValueError("替换词列表不能为空")
+
+    if os.path.abspath(output_path) == os.path.abspath(template_path):
+        raise ValueError("输出文件不能与模板文件相同，请换一个输出路径")
 
     # COM 在线程中使用必须先初始化；由于要用到剪贴板（Copy/Paste），
     # 线程必须以 STA（单线程单元）模式初始化，否则剪贴板操作会失败。
@@ -61,51 +74,37 @@ def merge_documents(template_path, output_path, replace_list, target_word,
     word = None
     src_doc = None
     dst_doc = None
+    temp_docs = []
     try:
         word = win32.Dispatch("Word.Application")
         word.Visible = show_word
+        word.DisplayAlerts = wdConst.wdAlertsNone  # 关闭弹窗，避免卡住后台线程
 
         if log:
             log("正在打开模板：" + os.path.basename(template_path))
 
-        src_doc = word.Documents.Open(template_path)
-        src_range = src_doc.Content
-
-        dst_doc = word.Documents.Add()
+        # 打开模板（只读）。每份副本下面用 Documents.Add(Template=...) 基于
+        # 模板文件新建，从而完整继承页面设置、图片/浮动对象位置、页眉页脚。
+        src_doc = word.Documents.Open(template_path, ReadOnly=True)
 
         total = len(replace_list)
+
+        # 第一步：为每个替换词生成一份独立的、替换好的文档。
         for i, new_word in enumerate(replace_list, start=1):
             if log:
-                log("[%d/%d] 处理替换词：%s" % (i, total, new_word))
+                log("[%d/%d] 生成副本并全文替换：%s" % (i, total, new_word))
 
-            insert_pos = dst_doc.Content.End
-            rng_dest = dst_doc.Range(insert_pos, insert_pos)
-            # 用剪贴板“复制整份模板 + 粘贴”到目标位置。
-            # 这是与用户手动操作（整体复制、换页粘贴）完全一致的方式，
-            # 能最完整地保留图片、浮动图形的定位，避免 FormattedText /
-            # InsertFile 复制时图片跳位的问题。
-            src_range.Copy()
-            rng_dest.Paste()
+            # 以模板为基础新建一份副本（等价“另存为一份”），这是解决
+            # “图片/对象位置错乱”的关键：页面设置与模板完全一致。
+            temp_doc = word.Documents.Add(Template=template_path)
 
-            # 从第二份开始，给这份内容的第一个段落设置“段前分页”，
-            # 让每份自动另起一页。相比在每份末尾插入分页符，这种方式
-            # 不会在下一页顶部多出一个空白段落（之前多出的空白行就是
-            # 插入分页符后残留的那个空段落造成的）。
-            # 注意：不要用 .Paragraphs(1) 取段落，win32com 下它返回的
-            # 对象没有 ParagraphFormat 属性（会报 <unknown>ParagraphFormat）。
-            # 直接用 collapsed 的 Range 即可，ParagraphFormat 会作用于
-            # 该插入点所在的整个段落。
-            if i > 1:
-                first_para = dst_doc.Range(insert_pos, insert_pos)
-                first_para.ParagraphFormat.PageBreakBefore = True
-
-            # 只在刚粘贴的这一段内查找替换，避免误替换前面已生成的内容
-            rng_find = dst_doc.Range(insert_pos, dst_doc.Content.End)
-            find = rng_find.Find
+            # 全文替换（模拟 Ctrl+H 全部替换）：范围是整份文档正文。
+            # 用整份 Content.Find 替换，而不是只在“刚粘贴的一段”里替换，
+            # 能避免漏替换（解决“部分内容不对”）。
+            find = temp_doc.Content.Find
             find.ClearFormatting()
-            # 关键：FindText / ReplaceWith 必须作为参数显式传入 Execute，
-            # 否则仅设置 find.Text / find.Replacement.Text 会被 Execute 的
-            # 默认空参数覆盖，导致“查找空字符串、替换为空”，即替换不生效。
+            # FindText / ReplaceWith 必须显式传给 Execute，否则会被默认
+            # 空参数覆盖，导致替换不生效。
             find.Execute(
                 FindText=target_word,
                 MatchCase=False,
@@ -114,17 +113,40 @@ def merge_documents(template_path, output_path, replace_list, target_word,
                 MatchSoundsLike=False,
                 MatchAllWordForms=False,
                 Forward=True,
-                Wrap=1,  # wdFindContinue，在范围内循环查找
+                Wrap=wdConst.wdFindContinue,  # 整篇循环查找替换
                 Format=False,
                 ReplaceWith=new_word,
                 Replace=WD_REPLACE_ALL,
             )
 
+            # 从第二份开始，给第一段设置“段前分页”，合并后每份自动另起一页，
+            # 且不会像插入分页符那样在下一页顶部残留空白行。
+            # 注意：不要用 .Paragraphs(1)（win32com 下返回对象无
+            # ParagraphFormat 属性）；直接用 collapsed Range，作用于所在整段。
+            if i > 1:
+                temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
+
+            temp_docs.append(temp_doc)
+
+        # 第二步：把所有独立文档合并成一个。
+        # 第一份直接作为最终文档基础（已继承模板页面设置），其余依次追加。
+        dst_doc = temp_docs[0]
+
+        for i in range(1, total):
+            if log:
+                log("[%d/%d] 合并第 %d 份" % (i + 1, total, i + 1))
+
+            # 光标移到最终文档末尾，粘贴下一份的整份内容
+            rng = dst_doc.Content
+            rng.Collapse(wdConst.wdCollapseEnd)
+            temp_docs[i].Content.Copy()
+            rng.Paste()
+
         if log:
             log("正在保存结果文件 ...")
         dst_doc.SaveAs2(output_path, FileFormat=WD_FORMAT_DOCX)
 
-        # 清除合并过程中写入剪贴板的模板内容
+        # 清除合并过程中写入剪贴板的内容
         try:
             word.CutCopyMode = False
         except Exception:
@@ -143,12 +165,13 @@ def merge_documents(template_path, output_path, replace_list, target_word,
     except Exception as e:
         raise RuntimeError(str(e)) from e
     finally:
-        # 关闭文档并退出 Word，确保进程被释放
-        try:
-            if dst_doc is not None:
-                dst_doc.Close(False)
-        except Exception:
-            pass
+        # 关闭所有文档并退出 Word，确保进程被释放
+        for d in temp_docs:
+            try:
+                if d is not None:
+                    d.Close(False)
+            except Exception:
+                pass
         try:
             if src_doc is not None:
                 src_doc.Close(False)
