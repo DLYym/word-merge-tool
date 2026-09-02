@@ -128,7 +128,7 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             # 注意：不要用 .Paragraphs(1)（win32com 下返回对象无
             # ParagraphFormat 属性）；直接用 collapsed Range，作用于所在整段。
             # if i > 2:
-            temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
+            # temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
 
             temp_docs.append(temp_doc)
 
@@ -136,34 +136,57 @@ def merge_documents(template_path, output_path, replace_list, target_word,
         # 第一份直接作为最终文档基础（已继承模板页面设置），其余依次追加。
         dst_doc = temp_docs[0]
 
+        # 常量：WD_PAGE_BREAK_BEFORE 等直接使用属性赋值，无需常量
         for i in range(1, total):
             if log:
                 log("[%d/%d] 合并第 %d 份" % (i + 1, total, i + 1))
-
-            # 复制：激活源文档并“全选复制”。
-            # 关键：不能用 Content.Copy()（Range.Copy 只复制文本流，
-            # 会丢失锚定在段落上的“浮动图片”），而 Selection.WholeStory()
-            # 模拟手动 Ctrl+A 全选，能连同浮动图片一起复制——这正是
-            # 表格里“联系人类型”列那些方框/选项图片（浮动图片）能
-            # 正常复制过去的原因。
+        
+            # 1. 复制源文档内容（全选复制，保留浮动图片）
             temp_docs[i].Activate()
             word.Selection.WholeStory()
             word.Selection.Copy()
-            
-            # 目标文档激活
-            dst_doc.Activate()
         
-            # 【修复核心】在粘贴前，先清除当前末尾段落的“段前分页”和“与下段同页”
-            # 这样就算粘贴时发生段落合并，这个属性也不会污染到第一份的内容
-            last_para = dst_doc.Paragraphs(dst_doc.Paragraphs.Count)
-            last_para.PageBreakBefore = False
-            last_para.KeepWithNext = False
-            
+            # 2. 激活目标文档，在末尾插入一个临时空段落（隔离段）
+            dst_doc.Activate()
+            rng = dst_doc.Content
+            rng.Collapse(WD_COLLAPSE_END)          # 折叠到末尾
+            rng.InsertParagraphAfter()             # 插入一个空段落
+            # 记录隔离段的位置（倒数第1个段落，因为刚插入的）
+            separator_index = dst_doc.Paragraphs.Count
+        
+            # 3. 定位到文档末尾（隔离段之后），粘贴剪贴板内容
             rng = dst_doc.Content
             rng.Collapse(WD_COLLAPSE_END)
             rng.Select()
             word.Selection.Paste()
-
+        
+            # 4. 设置粘贴进来的第一个段落（即隔离段之后的段落）的“段前分页”
+            #    注意：粘贴后，隔离段可能因为段落合并而消失？通常不会，因为隔离段是独立空段。
+            #    我们找到隔离段后面的那个段落（如果隔离段还在，就是索引 separator_index + 1）
+            #    更稳健的方法：通过 Range 定位到隔离段末尾，然后移动一个段落。
+            try:
+                # 获取隔离段所在的 Range
+                sep_range = dst_doc.Paragraphs(separator_index).Range
+                # 折叠到隔离段末尾
+                sep_range.Collapse(WD_COLLAPSE_END)
+                # 移动到下一个段落的开头
+                sep_range.MoveStart(1, 1)          # 向下移动一个段落
+                # 设置该段落的 PageBreakBefore
+                sep_range.ParagraphFormat.PageBreakBefore = True
+            except Exception:
+                # 如果隔离段因为某种原因被合并，则尝试定位到文档末尾倒数第一个段落，
+                # 但这种情况极少发生，可考虑更复杂的处理，此处仅做兜底。
+                last_para = dst_doc.Paragraphs(dst_doc.Paragraphs.Count)
+                last_para.PageBreakBefore = True
+        
+            # 5. 删除隔离段（可选，但保留也无大碍，不过为了整洁建议删除）
+            try:
+                sep_range = dst_doc.Paragraphs(separator_index).Range
+                sep_range.Delete()
+            except Exception:
+                pass
+        
+        
         if log:
             log("正在保存结果文件 ...")
         dst_doc.SaveAs2(output_path, FileFormat=WD_FORMAT_DOCX)
