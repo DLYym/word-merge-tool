@@ -127,9 +127,9 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             # 且不会像插入分页符那样在下一页顶部残留空白行。
             # 注意：不要用 .Paragraphs(1)（win32com 下返回对象无
             # ParagraphFormat 属性）；直接用 collapsed Range，作用于所在整段。
-            if i > 1:
-                # temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
-                temp_doc.Paragraphs(1).Format.PageBreakBefore = True
+            # if i > 1:
+            #     # temp_doc.Range(0, 0).ParagraphFormat.PageBreakBefore = True
+            #     temp_doc.Paragraphs(1).Format.PageBreakBefore = True
 
             temp_docs.append(temp_doc)
 
@@ -141,6 +141,13 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             if log:
                 log("[%d/%d] 合并第 %d 份" % (i + 1, total, i + 1))
 
+            # ---------- 在目标文档末尾插入分页符 ----------
+            # 将光标定位到文档末尾（最后一个段落标记之前）
+            end_range = dst_doc.Content
+            end_range.Collapse(WD_COLLAPSE_END)   # 折叠到末尾
+            end_range.InsertBreak(7)              # 7 = wdPageBreak，插入分页符
+            # ------------------------------------------------
+            
             # 复制：激活源文档并“全选复制”。
             # 关键：不能用 Content.Copy()（Range.Copy 只复制文本流，
             # 会丢失锚定在段落上的“浮动图片”），而 Selection.WholeStory()
