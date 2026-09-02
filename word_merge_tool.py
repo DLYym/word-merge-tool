@@ -67,9 +67,6 @@ def merge_documents(template_path, output_path, replace_list, target_word,
         if log:
             log("正在打开模板：" + os.path.basename(template_path))
 
-        src_doc = word.Documents.Open(template_path)
-        src_range = src_doc.Content
-
         dst_doc = word.Documents.Add()
 
         total = len(replace_list)
@@ -79,7 +76,10 @@ def merge_documents(template_path, output_path, replace_list, target_word,
 
             insert_pos = dst_doc.Content.End
             rng_dest = dst_doc.Range(insert_pos, insert_pos)
-            rng_dest.FormattedText = src_range.FormattedText
+            # 用 InsertFile 整份插入模板（含图片/浮动图形定位）。
+            # 比 FormattedText 跨文档赋值更能保留图片位置，
+            # 效果等同手动“插入文件 / 复制粘贴”。
+            rng_dest.InsertFile(template_path)
 
             # 只在刚粘贴的这一段内查找替换，避免误替换前面已生成的内容
             rng_find = dst_doc.Range(insert_pos, dst_doc.Content.End)
