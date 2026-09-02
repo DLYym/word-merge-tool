@@ -145,7 +145,8 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             # 将光标定位到文档末尾（最后一个段落标记之前）
             end_range = dst_doc.Content
             end_range.Collapse(WD_COLLAPSE_END)   # 折叠到末尾
-            end_range.InsertBreak(7)              # 7 = wdPageBreak，插入分页符
+            # end_range.InsertBreak(7)              # 7 = wdPageBreak，插入分页符
+            end_range.Text = "\f"         #插入分页符字符
             # ------------------------------------------------
             
             # 复制：激活源文档并“全选复制”。
