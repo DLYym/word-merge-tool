@@ -87,6 +87,14 @@ def merge_documents(template_path, output_path, replace_list, target_word,
             src_range.Copy()
             rng_dest.Paste()
 
+            # 从第二份开始，给这份内容的第一个段落设置“段前分页”，
+            # 让每份自动另起一页。相比在每份末尾插入分页符，这种方式
+            # 不会在下一页顶部多出一个空白段落（之前多出的空白行就是
+            # 插入分页符后残留的那个空段落造成的）。
+            if i > 1:
+                first_para = dst_doc.Range(insert_pos, insert_pos).Paragraphs(1)
+                first_para.ParagraphFormat.PageBreakBefore = True
+
             # 只在刚粘贴的这一段内查找替换，避免误替换前面已生成的内容
             rng_find = dst_doc.Range(insert_pos, dst_doc.Content.End)
             find = rng_find.Find
@@ -107,10 +115,6 @@ def merge_documents(template_path, output_path, replace_list, target_word,
                 ReplaceWith=new_word,
                 Replace=WD_REPLACE_ALL,
             )
-
-            # 除最后一份外，每份末尾插入分页符
-            if i < total:
-                dst_doc.Content.InsertAfter("\f")  # \f = Chr(12) 分页符
 
         if log:
             log("正在保存结果文件 ...")
@@ -357,5 +361,5 @@ def main():
     root.mainloop()
 
 
-if __name__ == "__&#8203;main__":
+if __name__ == "__main__":
     main()
