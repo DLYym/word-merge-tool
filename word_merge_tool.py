@@ -37,16 +37,20 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 try:
     import pythoncom
     import win32com.client as win32
-    from win32com.client import constants as wdConst
     HAS_WIN32COM = True
 except ImportError:
     pythoncom = None
     win32 = None
-    wdConst = None
     HAS_WIN32COM = False
 
+# 说明：这里用 win32.Dispatch（后期绑定）操作 Word，访问 wdConst.xxx 常量
+# 在后期绑定下不稳定（会报 AttributeError: <unknown>.xxx），所以全部改用
+# 字面整数值，最稳妥。
 WD_FORMAT_DOCX = 16    # wdFormatXMLDocument，对应 .docx
 WD_REPLACE_ALL = 2     # wdReplaceAll
+WD_ALERTS_NONE = 0     # wdAlertsNone，关闭 Word 弹窗
+WD_FIND_CONTINUE = 1   # wdFindContinue，整篇循环查找
+WD_COLLAPSE_END = 0    # wdCollapseEnd，折叠到末尾
 
 
 # ---------------------------------------------------------------------------
@@ -78,7 +82,7 @@ def merge_documents(template_path, output_path, replace_list, target_word,
     try:
         word = win32.Dispatch("Word.Application")
         word.Visible = show_word
-        word.DisplayAlerts = wdConst.wdAlertsNone  # 关闭弹窗，避免卡住后台线程
+        word.DisplayAlerts = WD_ALERTS_NONE  # 关闭弹窗，避免卡住后台线程
 
         if log:
             log("正在打开模板：" + os.path.basename(template_path))
@@ -113,7 +117,7 @@ def merge_documents(template_path, output_path, replace_list, target_word,
                 MatchSoundsLike=False,
                 MatchAllWordForms=False,
                 Forward=True,
-                Wrap=wdConst.wdFindContinue,  # 整篇循环查找替换
+                Wrap=WD_FIND_CONTINUE,  # 整篇循环查找替换
                 Format=False,
                 ReplaceWith=new_word,
                 Replace=WD_REPLACE_ALL,
@@ -138,7 +142,7 @@ def merge_documents(template_path, output_path, replace_list, target_word,
 
             # 光标移到最终文档末尾，粘贴下一份的整份内容
             rng = dst_doc.Content
-            rng.Collapse(wdConst.wdCollapseEnd)
+            rng.Collapse(WD_COLLAPSE_END)
             temp_docs[i].Content.Copy()
             rng.Paste()
 
